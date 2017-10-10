@@ -13,8 +13,11 @@
 #define TERM_CYAN "\033[36m"
 #define TERM_RESET "\x1b[0m"
 
-#define M_VECTOR_SIZE 2048
+#define M_VECTOR_SIZE 4096
 #define MAX_FLOAT 2048
+
+// Switch to init the vectors on host
+#define HOST_VECINIT 0
 
 std::string read_kernel(std::string kernel_path) {
     // Read the kernel file and return it as string;
@@ -67,8 +70,12 @@ int main(int argc, char** argv) {
     // Define the sources for device code
     cl::Program::Sources sources;
     // TODO: fix this path, absolute is not needed
-    std::string kernel_code = read_kernel("/home/gabmus/Development/OpenCL/QtCreator/vadd_test_ocl/vaddSimple_kernel.cl");
-    sources.push_back({kernel_code.c_str(), kernel_code.length()});
+#if !HOST_VECINIT
+    std::string kernel_code_vecinit = read_kernel("/home/gabmus/Development/OpenCL/QtCreator/vadd_test_ocl/vecinit_kernel.cl");
+    sources.push_back({kernel_code_vecinit.c_str(), kernel_code_vecinit.length()});
+#endif
+    std::string kernel_code_vaddSimple = read_kernel("/home/gabmus/Development/OpenCL/QtCreator/vadd_test_ocl/vaddSimple_kernel.cl");
+    sources.push_back({kernel_code_vaddSimple.c_str(), kernel_code_vaddSimple.length()});
 
     // Build device code
     cl::Program program(context, sources);
@@ -92,16 +99,20 @@ int main(int argc, char** argv) {
     float A[M_VECTOR_SIZE];
     float B[M_VECTOR_SIZE];
 
+#if HOST_VECINIT
     // TODO: initialize the vector in the device instead of the host
     for (int i=0; i<M_VECTOR_SIZE; i++) {
         A[i] = static_cast <float> (rand()) / static_cast <float> (RAND_MAX/MAX_FLOAT);
         B[i] = static_cast <float> (rand()) / static_cast <float> (RAND_MAX/MAX_FLOAT);
     }
-
+#endif
     // Create queue, and write arrays to device buffer in this queue
     cl::CommandQueue queue(context,default_device);
+#if HOST_VECINIT
     queue.enqueueWriteBuffer(b_A, CL_TRUE, 0, sizeof(float)*M_VECTOR_SIZE, A);
     queue.enqueueWriteBuffer(b_B, CL_TRUE, 0, sizeof(float)*M_VECTOR_SIZE, B);
+#endif
+
 
     // ---DEPRECATED---
     // Prepare to run the kernel                              vvv "vaddSimple" is the name of the kernel function
@@ -110,7 +121,15 @@ int main(int argc, char** argv) {
     // Run the kernel calling the functor
     //vaddSimple_functor(b_A, b_B, b_C);
 
-    // Prepare to run the kernel
+#if !HOST_VECINIT
+    cl::Kernel kernel_vecinit = cl::Kernel(program, "vecinit");
+    kernel_vecinit.setArg(0, b_A);
+    kernel_vecinit.setArg(1, b_B);
+    queue.enqueueNDRangeKernel(kernel_vecinit, cl::NullRange, cl::NDRange(M_VECTOR_SIZE), cl::NullRange);
+    queue.finish();
+#endif
+
+    // Prepare to run the kernel vaddSimple
     cl::Kernel kernel_vaddSimple = cl::Kernel(program, "vaddSimple");
     kernel_vaddSimple.setArg(0, b_A);
     kernel_vaddSimple.setArg(1, b_B);
@@ -121,6 +140,11 @@ int main(int argc, char** argv) {
     // Get the results out of the device, back to the host
     float C[M_VECTOR_SIZE];
     queue.enqueueReadBuffer(b_C, CL_TRUE, 0, sizeof(float)*M_VECTOR_SIZE, C);
+
+#if !HOST_VECINIT
+    queue.enqueueReadBuffer(b_A, CL_TRUE, 0, sizeof(float)*M_VECTOR_SIZE, A);
+    queue.enqueueReadBuffer(b_B, CL_TRUE, 0, sizeof(float)*M_VECTOR_SIZE, B);
+#endif
 
     // Print the results
     std::cout << "\n\nResults:\n=================================================\n";
