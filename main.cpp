@@ -26,7 +26,28 @@ std::string read_kernel(std::string kernel_path) {
     return sourceCode;
 }
 
+std::string get_dir(const std::string filepath) {
+    std::string toret = "";
+
+    for (int i=filepath.length(); i>=0; i--) {
+        if (filepath[i] == '/') {
+            toret = filepath.substr(0,i);
+            break;
+        }
+    }
+
+    if (toret == "") {
+        std::cerr << TERM_RED << "Error: provided filepath is not a valid path." << TERM_RESET;
+        return NULL;
+    }
+
+    return toret;
+}
+
 int main(int argc, char** argv) {
+
+    std::string pwd = get_dir(argv[0]);
+
     // get all platforms
     std::vector<cl::Platform> all_platforms;
     cl::Platform::get(&all_platforms);
@@ -71,10 +92,10 @@ int main(int argc, char** argv) {
     cl::Program::Sources sources;
     // TODO: fix this path, absolute is not needed
 #if !HOST_VECINIT
-    std::string kernel_code_vecinit = read_kernel("/home/gabmus/Development/OpenCL/QtCreator/vadd_test_ocl/vecinit_kernel.cl");
+    std::string kernel_code_vecinit = read_kernel(pwd + "/vecinit_kernel.cl");
     sources.push_back({kernel_code_vecinit.c_str(), kernel_code_vecinit.length()});
 #endif
-    std::string kernel_code_vaddSimple = read_kernel("/home/gabmus/Development/OpenCL/QtCreator/vadd_test_ocl/vaddSimple_kernel.cl");
+    std::string kernel_code_vaddSimple = read_kernel(pwd + "/vaddSimple_kernel.cl");
     sources.push_back({kernel_code_vaddSimple.c_str(), kernel_code_vaddSimple.length()});
 
     // Build device code
