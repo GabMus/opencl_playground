@@ -158,7 +158,7 @@ void bgr2bgra(BMPVEC& rawbmp, BMPVEC& bgravec) {
     }
 }
 
-void prepend_bitmap_headers(BMPVEC& original, uint32_t* new_pixeldata) {
+void prepend_bitmap_headers(BMPVEC& original, float* new_pixeldata) {
     PBITMAPFILEHEADER b_fh = (PBITMAPFILEHEADER)(&original[0]);
     int k = 0;
     uint8_t* p = reinterpret_cast<uint8_t*>(new_pixeldata);
@@ -210,16 +210,18 @@ int main(int argc, char** argv) {
     cl::Image2D cl_image = cl::Image2D(
                 context,
                 CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,
-                cl::ImageFormat(CL_BGRA, CL_UNSIGNED_INT8),
+                cl::ImageFormat(CL_BGRA, CL_UNORM_INT8),
                 bmp_width, bmp_height,
                 0,
                 (void*)(&bmp_bgra_data[0]));
 
-    cl::Buffer cl_result = cl::Buffer(
+    cl::Image2D cl_outimage = cl::Image2D(
                 context,
-                CL_MEM_WRITE_ONLY,
-                sizeof(CL_UNSIGNED_INT32)*bmp_width*bmp_height);
-
+                CL_MEM_WRITE_ONLY | CL_MEM_USE_HOST_PTR,
+                cl::ImageFormat(CL_BGRA, CL_UNORM_INT8),
+                bmp_width, bmp_height,
+                0,
+                (void*)(&bmp_bgra_data[0]));
 
     std::string kernel_code_srgb2linear = read_kernel(pwd + "/srgb2linear_kernel.cl");
     sources.push_back({kernel_code_srgb2linear.c_str(), kernel_code_srgb2linear.length()});
@@ -241,25 +243,42 @@ int main(int argc, char** argv) {
     // Prepare to run the kernel
     cl::Kernel kernel_srgb2linear = cl::Kernel(program, "srgb2linear");
     kernel_srgb2linear.setArg(0, cl_image);
-    kernel_srgb2linear.setArg(1, cl_result);
+    kernel_srgb2linear.setArg(1, cl_outimage);
     queue.enqueueNDRangeKernel(kernel_srgb2linear, cl::NullRange, cl::NDRange(bmp_width, bmp_height), cl::NullRange);
     queue.finish();
 
     // Get the results out of the device, back to the host
     // Init host out vector
-    uint32_t* host_outvec = new uint32_t[bmp_width*bmp_height];
+    /*float* host_outvec = new float[bmp_width*bmp_height];
     queue.enqueueReadBuffer(
                 cl_result,
                 CL_TRUE,
                 0,
-                sizeof(uint32_t)*bmp_width*bmp_height,
+                sizeof(float)*bmp_width*bmp_height,
                 host_outvec);
 
     bool isAllZero = true;
     for (int i = 0; i < bmp_width * bmp_height; i++)
         if (host_outvec[i]) isAllZero = false;
-    printf( isAllZero ? "FOCK\n" : "There is hope\n" );
-
+    printf( isAllZero ? "Image is black\n" : "Image is not black\n" );
+    */
+    float* host_outvec = new float[bmp_width*bmp_height];
+    cl::size_t<3> ri_origin;
+    ri_origin[0] = 0;
+    ri_origin[1] = 0;
+    ri_origin[2] = 0;
+    cl::size_t<3> ri_region;
+    ri_region[0] = bmp_width;
+    ri_region[1] = bmp_height;
+    ri_region[2] = 1;
+    queue.enqueueReadImage(
+                cl_outimage,
+                CL_TRUE,
+                ri_origin,
+                ri_region,
+                0,
+                0,
+                host_outvec);
     prepend_bitmap_headers(bmp, host_outvec);
 
     write_bitmap(bmp, "/home/gabmus/test_ocl.bmp");
