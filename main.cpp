@@ -9,6 +9,7 @@
 #include <CL/cl.hpp>
 
 #include "bitmap.hpp"
+#include "cl_errorcheck.hpp"
 
 #define TERM_BOLD "\033[1m"
 #define TERM_GREEN "\x1b[32m"
@@ -170,7 +171,15 @@ void prepend_bitmap_headers(BMPVEC& original, float* new_pixeldata) {
     }
 }
 
+void cl_check(cl_int& err, std::string msg) {
+    if (err != CL_SUCCESS) {
+        std::cerr << TERM_RED << "CL ERROR: " << msg << "; ERROR CODE: " << err << std::endl << "      " << err << " -> " << getErrorString(err) << std::endl << TERM_RESET;
+    }
+}
+
 int main(int argc, char** argv) {
+
+    cl_int err;
 
     std::string pwd = get_dir(argv[0]);
 
@@ -205,23 +214,46 @@ int main(int argc, char** argv) {
     BMPVEC bmp_bgra_data;
     BMPVEC bmp_bgr_data;
     get_bitmap_data(bmp, bmp_bgr_data);
+
+#if DEBUG
+    std::cout << TERM_GREEN << "Converting BGR to BGRA" << TERM_RESET << std::endl;
+#endif
+
     bgr2bgra(bmp_bgr_data, bmp_bgra_data);
 
+#if DEBUG
+    std::cout << TERM_GREEN << "Done: Converting BGR to BGRA" << TERM_RESET << std::endl;
+#endif
+
+
+#if DEBUG
+    std::cout << TERM_CYAN << "Initializing Images on gpu" << TERM_RESET << std::endl;
+#endif
     cl::Image2D cl_image = cl::Image2D(
                 context,
                 CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,
-                cl::ImageFormat(CL_BGRA, CL_UNORM_INT8),
+                cl::ImageFormat(CL_sRGBA, CL_UNORM_INT8),
                 bmp_width, bmp_height,
                 0,
-                (void*)(&bmp_bgra_data[0]));
+                (void*)(&bmp_bgra_data[0]),
+                &err);
+
+    cl_check(err, "Creating input image");
 
     cl::Image2D cl_outimage = cl::Image2D(
                 context,
                 CL_MEM_WRITE_ONLY | CL_MEM_USE_HOST_PTR,
-                cl::ImageFormat(CL_BGRA, CL_UNORM_INT8),
+                cl::ImageFormat(CL_RGBA, CL_UNORM_INT8),
                 bmp_width, bmp_height,
                 0,
-                (void*)(&bmp_bgra_data[0]));
+                (void*)(&bmp_bgra_data[0]),
+                &err);
+
+    cl_check(err, "Creating output image");
+
+#if DEBUG
+    std::cout << TERM_CYAN << "Done: Initializing Images on gpu" << TERM_RESET << std::endl;
+#endif
 
     std::string kernel_code_srgb2linear = read_kernel(pwd + "/srgb2linear_kernel.cl");
     sources.push_back({kernel_code_srgb2linear.c_str(), kernel_code_srgb2linear.length()});
@@ -281,8 +313,16 @@ int main(int argc, char** argv) {
                 host_outvec);
     prepend_bitmap_headers(bmp, host_outvec);
 
+#if DEBUG
+    std::cout << TERM_CYAN << "Writing bitmap to disk" << TERM_RESET << std::endl;
+#endif
+
     write_bitmap(bmp, "/home/gabmus/test_ocl.bmp");
     return 0;
+
+#if DEBUG
+    std::cout << TERM_CYAN << "Done: Writing bitmap to disk" << TERM_RESET << std::endl;
+#endif
 
 /*
 #if !HOST_VECINIT

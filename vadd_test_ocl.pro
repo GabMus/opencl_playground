@@ -19,4 +19,5 @@ QMAKE_EXTRA_TARGETS += copyfiles
 POST_TARGETDEPS += copyfiles
 
 HEADERS += \
-    bitmap.hpp
+    bitmap.hpp \
+    cl_errorcheck.hpp
